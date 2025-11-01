@@ -1,0 +1,28 @@
+# Use a slim Python base
+FROM python:3.11-slim
+
+# set a working dir
+WORKDIR /app
+
+# system deps (if you need build tools, add them here)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# copy requirements first for caching
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# copy project files
+COPY . /app
+
+# create a non-root user (security)
+RUN useradd -m botuser && chown -R botuser:botuser /app
+USER botuser
+
+# default env (override with docker-compose or at run)
+ENV PYTHONUNBUFFERED=1
+
+# entrypoint (use whatever you actually run)
+CMD ["python", "runner.py"]
