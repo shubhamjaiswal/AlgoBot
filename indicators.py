@@ -107,7 +107,7 @@ class StochRSI(bt.Indicator):
 class ChoppinessIndex(bt.Indicator):
     lines = ('chop',)
     params = (
-        ('period', 14),
+        ('period', 13),
         ('data', None),
     )
     plotinfo = dict(subplot=True)

@@ -4,13 +4,22 @@ from strategies import Sma3_18_Cross
 from broker import KiteBroker
 from data_feed import LiveKiteDataMultiTimeframeSyncedPrefill
 import time
+import os
 
 # Control live vs simulated run - SET THIS TO TRUE OR FALSE
 run_live = True
 
-# Load config
-with open("config.json") as f:
-    cfg = json.load(f)
+# # Load config
+# with open("config.json") as f:
+#     cfg = json.load(f)
+# print(cfg)
+
+cfg = {
+    "api_key": os.getenv("API_KEY"),
+    "access_token": os.getenv("ACCESS_TOKEN"),
+    "instrument_token": json.loads(os.getenv("INSTRUMENT_TOKEN", "[]")),
+}
+
 print(cfg)
 
 # cerebro = bt.Cerebro(maxcpus=1)

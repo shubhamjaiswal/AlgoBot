@@ -5,6 +5,7 @@ import os, csv
 import datetime as dt
 import math
 # import time
+from telegram_messenger import TelegramMessenger
 import pytz
 import backtrader as bt
 import math
@@ -2009,15 +2010,31 @@ class IntradayPullbackOptions(bt.Strategy):
         if order.status in [order.Completed, order.Canceled, order.Rejected]:
             self.order = None
 
+
+
+
+class PrintCandleStrategy(bt.Strategy):
+    def next(self):
+        dt = bt.num2date(self.data.datetime[0])
+        o = self.data.open[0]
+        h = self.data.high[0]
+        l = self.data.low[0]
+        c = self.data.close[0]
+        v = self.data.volume[0]
+
+        print(f"[{dt}] O: {o:.2f}, H: {h:.2f}, L: {l:.2f}, C: {c:.2f}, V: {v:.4f}")
+
+
+
 class Sma3_18_Cross(bt.Strategy):
     params = dict(
         sma3=4,
-        sma19=16,  # Added for trend filter
+        sma19=12,  # Added for trend filter
         lookback=1,
         log_file='trades_log.csv',
         size=1,
         market_close=time(15, 15),  # cuttoff param
-        choppiness_threshold = 50
+        choppiness_threshold = 51
     )
 
     def __init__(self):
@@ -2032,6 +2049,7 @@ class Sma3_18_Cross(bt.Strategy):
         self.size = 1
         self.choppiness = dict()
         self.choppiness_threshold = dict()
+        self.tg_bot = TelegramMessenger()
 
         for data in self.datas:
             self.sma3[data] = bt.ind.SMA(data.close, period=self.p.sma3)
@@ -2043,7 +2061,7 @@ class Sma3_18_Cross(bt.Strategy):
             self.buy_times[data] = None
             self.crossover_flags[data] = False
             self.market_cutoff = True  # MAKE THIS FALSE AS IT IS MALFUNCTIONING WITH LIVE FEED
-            self.choppiness_threshold[data] = 50
+            self.choppiness_threshold[data] = 51
 
         # Init log file
         if not os.path.exists(self.p.log_file):
@@ -2073,6 +2091,8 @@ class Sma3_18_Cross(bt.Strategy):
         return datetime.now(IST)
 
     def next(self):
+        if len(self.data) < 20:
+            return  # wait until enough candles
         print("Starting checks")
         # if not self.data.live:  # skip all backfill bars
         #     print("Filling in the bars, refrain from entering a trade until live feed appears")
@@ -2098,20 +2118,20 @@ class Sma3_18_Cross(bt.Strategy):
         #     return  # stop further entries after cutoff
 
         # for non live feed
-        if self.market_cutoff:
-            if (bar_hour > 15) or (bar_hour == 15 and bar_minute >= 15):
-                for data in self.datas:
-                    pos = self.broker.getposition(data)
-                    if pos.size != 0:
-                        logger.info(f"[{bar_dt_ist}] > Triggering end-of-day square-off (IST)")
-                        # Use close() which is safe for both long/short
-                        self.orders[data] = self.sell(data=data)
-                        self.crossover_flags[data] = False
-                        print(f"{data.tradingsymbol} SELL triggered @ {data.close[0]:.2f}")
-                        print(f"[{bar_dt_ist}] {data.tradingsymbol} - issued square-off close (size={pos.size})")
-
-                # No more entries beyond 15:15 IST
-                return
+        # if self.market_cutoff:
+        #     if (bar_hour > 15) or (bar_hour == 15 and bar_minute >= 15):
+        #         for data in self.datas:
+        #             pos = self.broker.getposition(data)
+        #             if pos.size != 0:
+        #                 logger.info(f"[{bar_dt_ist}] > Triggering end-of-day square-off (IST)")
+        #                 # Use close() which is safe for both long/short
+        #                 self.orders[data] = self.sell(data=data)
+        #                 self.crossover_flags[data] = False
+        #                 print(f"{data.tradingsymbol} SELL triggered @ {data.close[0]:.2f}")
+        #                 print(f"[{bar_dt_ist}] {data.tradingsymbol} - issued square-off close (size={pos.size})")
+        #
+        #         # No more entries beyond 15:15 IST
+        #         return
 
         # ✅ Continue normal trading if before cutoff
         for data in self.datas:
@@ -2146,7 +2166,7 @@ class Sma3_18_Cross(bt.Strategy):
                 print(f"{data.tradingsymbol} SMA3 : {self.sma3[data][0]} ")
                 print(f"{data.tradingsymbol} SMA18 : {self.sma19[data][0]} ")
                 print(f"crossover {self.crossover_flags[data]}")
-                if self.crossover_flags[data] and choppiness < 50:
+                if self.crossover_flags[data] and choppiness < 51:
                     print("entering trade")
                     print(f"{data.tradingsymbol} SMA3 : {self.sma3[data][0]}")
                     print(f"{data.tradingsymbol} SMA18 : {self.sma19[data][0]}")
@@ -2157,8 +2177,9 @@ class Sma3_18_Cross(bt.Strategy):
                     #     print(f"{data.tradingsymbol} SMA3 : {self.sma3[data][0]}")
                     #     print(f"{data.tradingsymbol} SMA18 : {self.sma19[data][0]}")
 
-                    self.orders[data] = self.buy(data=data, size=self.size)
+                    # self.orders[data] = self.buy(data=data, size=self.size)
                     # self.crossover_flags[data] = False  # Reset after entry
+                    self.tg_bot.send_signal(data.tradingsymbol, "BUY", close_price, bar_time)
                     print(f"[{bar_time}] {data.tradingsymbol} BUY triggered @ {close_price:.2f}")
             # Exit condition
             elif position.size > 0:
@@ -2169,9 +2190,10 @@ class Sma3_18_Cross(bt.Strategy):
                     print(f"CONFIRMED SELL {data.tradingsymbol} -")
                     print(f"SMA3 : {self.sma3[data][0]} FOR {data.tradingsymbol}")
                     print(f"SMA18 : {self.sma19[data][0]} FOR {data.tradingsymbol}")
-                    self.orders[data] = self.sell(data=data, size=self.size)
+                    # self.orders[data] = self.sell(data=data, size=self.size)
                     self.crossover_flags[data] = False
                     print(f"[{bar_time}] {data.tradingsymbol} SELL triggered @ {close_price:.2f}")
+                    self.tg_bot.send_signal(data.tradingsymbol, "SELL", close_price, bar_time)
 
     def notify_order(self, order):
         if order is None or order.status not in [order.Completed, order.Canceled, order.Rejected]:

@@ -1,38 +1,33 @@
-# === Base Python image ===
+# Dockerfile
 FROM python:3.11-slim
 
-# === Environment Variables ===
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    TZ=Asia/Kolkata
-
-# === Working Directory ===
+# set a working dir
 WORKDIR /app
 
-# === System Dependencies ===
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# === Copy dependencies first for caching ===
+# copy requirements then install for layer caching
 COPY requirements.txt .
 
-# === Install Python dependencies ===
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3-dev \
+    gcc \
+    libxml2-dev \
+    libxslt-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# === Copy project files ===
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# copy project
 COPY . .
 
-# === Healthcheck (optional, ECS compatible) ===
-HEALTHCHECK CMD curl --fail http://localhost:8000/health || exit 1
+# create a non-root user for safety (optional)
+RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app
+USER appuser
 
-# Add supervisor config
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# expose port if your bot serves an HTTP endpoint (optional)
+# EXPOSE 8080
 
-# === Expose app port ===
-EXPOSE 8000
-
-# === Default command ===
+# default command - adapt to your bot entrypoint
 CMD ["python", "runner.py"]
